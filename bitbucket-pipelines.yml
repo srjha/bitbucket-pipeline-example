@@ -1,0 +1,47 @@
+image: atlassian/default-image:2
+
+pipelines:
+  # By default (master branch) only validation is going to be triggered
+  default:
+    - step:
+        deployment: test
+        name: EKS Infra build and validate
+        script:
+          - mkdir -p ~/bin
+          - cd ~/bin
+          - export PATH="$PATH:/root/bin"
+          - apt-get update && apt-get install -y unzip python-pip
+          
+          - wget https://releases.hashicorp.com/terraform/0.11.13/terraform_0.11.13_linux_386.zip
+          - unzip terraform_0.11.13_linux_386.zip
+          - cd ${BITBUCKET_CLONE_DIR}
+          - terraform version
+          - terraform init
+          - terraform show
+          - terraform plan
+  branches:
+    # If a code is merged to branch tf-apply, it will execute below steps including terraform apply
+    tf-apply:
+      - step:
+          name: Infra launch
+          script:
+            - mkdir -p ~/bin
+            - cd ~/bin
+            - export PATH="$PATH:/root/bin"
+            - wget https://releases.hashicorp.com/terraform/0.11.13/terraform_0.11.13_linux_386.zip
+            - unzip terraform_0.11.13_linux_386.zip
+            - cd ${BITBUCKET_CLONE_DIR}
+            - terraform version
+            - terraform init
+            - terraform apply -auto-approve
+            #- terraform destroy -auto-approve
+            - mkdir -p auth
+            - terraform output config_map_aws_auth > auth/$AUTH_CM_FILE
+            - pipe: atlassian/aws-s3-deploy:0.2.4
+              variables:
+                AWS_ACCESS_KEY_ID: $AWS_ACCESS_KEY_ID
+                AWS_SECRET_ACCESS_KEY: $AWS_SECRET_ACCESS_KEY
+                AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+                S3_BUCKET: $KUBE_CONFIG_CM_BUCKET
+                LOCAL_PATH: $BITBUCKET_CLONE_DIR/auth
+            
